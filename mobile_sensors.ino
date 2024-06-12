@@ -45,9 +45,18 @@ const unsigned long uvPhase = 100;
 const unsigned long thermoCoupleUpdateInterval = 500;
 const unsigned long thermoCouplePhase = 2000;
 
-// MQTT configuration (see rest on secrets.h)
+// MQTT configuration
+/* Add a secrets.h file next to this file with the following contents:
+ *
+ * const char wifiSSID[] = "<wifi network name>";
+ * const char wifiPass[] = "<wifi network password>";
+ *
+ * const char mqttHost[] = "<host>";
+ * const int mqttPort = <port>;
+ */
 
 const long mqttPublishInterval = 3000; // ms
+const char mqttTopic[] = "mobile_sensors/data";
 
 // -----
 
