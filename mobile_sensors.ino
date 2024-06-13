@@ -28,7 +28,8 @@
 
 // Constants
 
-const unsigned long sleepTime = 30 * 1000; // ms
+const unsigned long sleepTime = 30 * 1000;     // ms
+const unsigned long resetPressDuration = 3000; // ms
 
 // Sensor intervals
 
@@ -106,6 +107,7 @@ void displayDoneSetup() {
 #define BUTTON_PIN 14
 
 bool buttonState = false;
+unsigned long buttonPressedTime = 0;
 
 void setupButton() {
   pinMode(BUTTON_PIN, INPUT_PULLUP);
@@ -114,12 +116,17 @@ void setupButton() {
 
 void readButton() {
   bool newButtonState = digitalRead(BUTTON_PIN) == LOW;
-  digitalWrite(LED_BUILTIN, newButtonState ? HIGH : LOW);
 
-  if (newButtonState != buttonState) {
-    buttonState = newButtonState;
-    onButtonPressed(buttonState);
+  if (newButtonState == buttonState) {
+    return;
   }
+
+  digitalWrite(LED_BUILTIN, newButtonState ? HIGH : LOW);
+  buttonState = newButtonState;
+  if (buttonState) {
+    buttonPressedTime = millis();
+  }
+  onButtonPressed(buttonState);
 }
 
 // Error handling
@@ -146,7 +153,7 @@ void freezeOnError(char err[]) {
 // UV sensor (VEML6070)
 
 Adafruit_VEML6070 uv = Adafruit_VEML6070();
-Chart uvChart(&display, display.width(), display.height());
+Chart uvChart(&display, "UV", display.width(), display.height());
 
 unsigned long lastUvUpdate = 0;
 uint16_t uvValue = 0;
@@ -161,7 +168,7 @@ void readUV() { uvValue = uv.readUV(); }
 
 Adafruit_TSL2561_Unified tsl =
     Adafruit_TSL2561_Unified(TSL2561_ADDR_LOW, 12345);
-Chart lightChart(&display, display.width(), display.height());
+Chart lightChart(&display, "LIGHT", display.width(), display.height());
 
 unsigned long lastLightUpdate = 0;
 uint16_t lightValue = 0;
@@ -180,8 +187,8 @@ void readLight() {
 // Temp Sensor (MCP9600)
 
 MCP9600 tempSensor;
-Chart tempChart(&display, display.width(), display.height());
-Chart ambientChart(&display, display.width(), display.height());
+Chart tempChart(&display, "PROBE", display.width(), display.height());
+Chart ambientChart(&display, "AMBIENT", display.width(), display.height());
 
 unsigned long lastThermoCoupleUpdate = 0;
 float thermoCoupleValue = -1.0;
@@ -304,6 +311,8 @@ unsigned long wakeupTime = 0;
 unsigned long lastScreenEnter = 0;
 bool isAwake = true;
 int curScreen = 0;
+Chart *curChart = NULL;
+
 unsigned long startTime;
 bool firstLoop = true;
 
@@ -380,45 +389,6 @@ void drawAllSensorScreen() {
   drawFlag(1, publishToggle);
 }
 
-void drawSplash(char title[]) {
-  display.setCursor(2, 2);
-  display.setTextSize(2);
-  display.setTextColor(SSD1306_INVERSE);
-  display.println(title);
-}
-
-void drawUVScreen() {
-  uvChart.draw();
-
-  if (millis() - lastScreenEnter < 1000) {
-    drawSplash("UV");
-  }
-}
-
-void drawLightScreen() {
-  lightChart.draw();
-
-  if (millis() - lastScreenEnter < 1000) {
-    drawSplash("LIGHT");
-  }
-}
-
-void drawThermoCoupleScreen() {
-  tempChart.draw();
-
-  if (millis() - lastScreenEnter < 1000) {
-    drawSplash("THERMO");
-  }
-}
-
-void drawAmbientTempScreen() {
-  ambientChart.draw();
-
-  if (millis() - lastScreenEnter < 1000) {
-    drawSplash("AMBIENT");
-  }
-}
-
 void setup() {
   Serial.begin(9600);
 
@@ -479,23 +449,10 @@ void loop() {
 
   if (isAwake && countToUpdate(displayUpdateInterval, 0)) {
     display.clearDisplay();
-
-    switch (curScreen) {
-    case ALLSENSOR_SCREEN:
+    if (curChart == NULL) {
       drawAllSensorScreen();
-      break;
-    case UV_SCREEN:
-      drawUVScreen();
-      break;
-    case LIGHT_SCREEN:
-      drawLightScreen();
-      break;
-    case AMBIENT_TEMP_SCREEN:
-      drawAmbientTempScreen();
-      break;
-    case THERMOCOUPLE_SCREEN:
-      drawThermoCoupleScreen();
-      break;
+    } else {
+      curChart->draw();
     }
 
     display.display();
@@ -524,11 +481,40 @@ void onButtonPressed(bool pressed) {
       isAwake = true;
       lastScreenEnter = now;
     }
-  } else {
-    // switch screen
-    if (!pressed && millis() - lastScreenEnter > 500) {
-      curScreen = (curScreen + 1) % SCREEN_COUNT;
-      lastScreenEnter = now;
+  } else if (now - lastScreenEnter > 500) {
+    if (!pressed && curChart != NULL && !curChart->getInfoMode()) {
+      curChart->setInfoMode(true);
+    } else {
+      if (!pressed && now - buttonPressedTime > resetPressDuration) {
+        curChart->reset();
+      } else {
+        // switch screen
+        if (!pressed) {
+          curScreen = (curScreen + 1) % SCREEN_COUNT;
+          lastScreenEnter = now;
+          switch (curScreen) {
+          case ALLSENSOR_SCREEN:
+            curChart = NULL;
+            break;
+          case UV_SCREEN:
+            curChart = &uvChart;
+            break;
+          case LIGHT_SCREEN:
+            curChart = &lightChart;
+            break;
+          case AMBIENT_TEMP_SCREEN:
+            curChart = &ambientChart;
+            break;
+          case THERMOCOUPLE_SCREEN:
+            curChart = &tempChart;
+            break;
+          }
+
+          if (curChart != NULL) {
+            curChart->start();
+          }
+        }
+      }
     }
   }
 
