@@ -1,8 +1,10 @@
 /**************************************************************************
  * mobile_sensors.ino
- * by Tal Eisenberg (@eisental)
+ * by Tal Eisenberg (https://github.com/eisental)
  * Written for Arduino MKR1000 with a button, 128x32 OLED display, TSL2561,
  * VEML6070, and MCP9600
+ *
+ * NOTE: Modify secrets.h to configure MQTT and WiFi options
  *
  * Dependencies:
  * - WiFi101
@@ -26,12 +28,12 @@
 #include <WiFi101.h>
 #include <Wire.h>
 
-// Constants
+// # Configuration
 
 const unsigned long sleepTime = 30 * 1000;     // ms
 const unsigned long resetPressDuration = 3000; // ms
 
-// Sensor intervals
+// ## Sensor intervals
 
 // in frames (see delay call for frame rate)
 const unsigned long displayUpdateInterval = 10;
@@ -40,24 +42,27 @@ const unsigned long displayUpdateInterval = 10;
 const unsigned long lightUpdateInterval = 1000;
 const unsigned long lightPhase = 1000;
 
-const unsigned long uvUpdateInterval = 5000;
+const unsigned long uvUpdateInterval = 3000;
 const unsigned long uvPhase = 100;
 
 const unsigned long thermoCoupleUpdateInterval = 500;
 const unsigned long thermoCouplePhase = 2000;
 
-// MQTT configuration
-/* Add a secrets.h file next to this file with the following contents:
- *
- * const char wifiSSID[] = "<wifi network name>";
- * const char wifiPass[] = "<wifi network password>";
- *
- * const char mqttHost[] = "<host>";
- * const int mqttPort = <port>;
- */
+// ## MQTT configuration
 
 const long mqttPublishInterval = 3000; // ms
 const char mqttTopic[] = "mobile_sensors/data";
+
+// ## Pin definitions
+
+// OLED SSD1306 SPI display
+#define OLED_MOSI 9
+#define OLED_CLK 10
+#define OLED_DC 7
+#define OLED_CS 8
+#define OLED_RESET 13
+
+#define BUTTON_PIN 14
 
 // -----
 
@@ -65,12 +70,6 @@ const char mqttTopic[] = "mobile_sensors/data";
 
 #define SCREEN_WIDTH 128 // OLED display width, in pixels
 #define SCREEN_HEIGHT 32 // OLED display height, in pixels
-
-#define OLED_MOSI 9
-#define OLED_CLK 10
-#define OLED_DC 7
-#define OLED_CS 8
-#define OLED_RESET 13
 
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, OLED_MOSI, OLED_CLK,
                          OLED_DC, OLED_RESET, OLED_CS);
@@ -103,8 +102,6 @@ void displayDoneSetup() {
 }
 
 // Button
-
-#define BUTTON_PIN 14
 
 bool buttonState = false;
 unsigned long buttonPressedTime = 0;
@@ -218,7 +215,7 @@ void readTempSensor() {
   }
 }
 
-// MQTT
+// WiFi + MQTT
 
 WiFiClient wifi;
 MqttClient mqtt(wifi);
@@ -297,7 +294,7 @@ void publishMQTT() {
   mqtt.endMessage();
 }
 
-// ------- main loop -------
+// ------- main -------
 
 #define ALLSENSOR_SCREEN 0
 #define AMBIENT_TEMP_SCREEN 1
@@ -409,8 +406,6 @@ void setup() {
 }
 
 void loop() {
-  mqtt.poll();
-
   unsigned long now = millis();
   if (firstLoop) {
     startTime = now;
@@ -423,6 +418,7 @@ void loop() {
     sleep();
   }
 
+  // Read sensors
   readButton();
 
   if (timeToUpdate(now, &lastUvUpdate, uvUpdateInterval, uvPhase)) {
@@ -442,11 +438,13 @@ void loop() {
     ambientChart.updateChart(ambientTempValue);
   }
 
+  // MQTT
   if (timeToUpdate(now, &lastMQTTPublish, mqttPublishInterval,
                    mqttPublishInterval)) {
     publishMQTT();
   }
 
+  // display
   if (isAwake && countToUpdate(displayUpdateInterval, 0)) {
     display.clearDisplay();
     if (curChart == NULL) {

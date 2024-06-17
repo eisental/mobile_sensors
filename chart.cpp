@@ -93,11 +93,11 @@ void Chart::updateChart(float newValue) {
     _maxValue = newValue + 1;
   }
 
-  if (newValue < _minValue) {
-    _minValue = newValue;
+  if (newValue <= _minValue) {
+    _minValue = newValue > 0 ? newValue - 1 : 0;
   }
-  if (newValue > _maxValue) {
-    _maxValue = newValue;
+  if (newValue >= _maxValue) {
+    _maxValue = newValue + 1;
   }
 
   _buffer[_curIndex] = newValue;
